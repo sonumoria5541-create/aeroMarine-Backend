@@ -334,18 +334,65 @@ export const getDeposits = async (req, res) => {
 
     if (search && search.trim()) {
       const term = search.trim();
+      const matchedUsers = await User.find({
+        $or: [
+          { name: { $regex: term, $options: 'i' } },
+          { phone: { $regex: term, $options: 'i' } },
+          { email: { $regex: term, $options: 'i' } },
+          { inviteCode: { $regex: term, $options: 'i' } },
+        ],
+      }).select('_id');
+      const userIds = matchedUsers.map((u) => u._id);
+
       filter.$or = [
         { utr: { $regex: term, $options: 'i' } },
         { userPhone: { $regex: term, $options: 'i' } },
+        { userId: { $in: userIds } },
       ];
     }
 
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
     const total = await Recharge.countDocuments(filter);
-    const deposits = await Recharge.find(filter)
+    const rawDeposits = await Recharge.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit, 10));
+      .limit(parseInt(limit, 10))
+      .populate('userId', 'name phone email inviteCode vipLevel avatar wallet bankAccount status createdAt');
+
+    const deposits = rawDeposits.map((dep) => {
+      const u = dep.userId && typeof dep.userId === 'object' ? dep.userId : {};
+      const userPhone = dep.userPhone || u.phone || '';
+      const userName = u.name || (userPhone ? `Member (${userPhone.slice(-4)})` : 'Member');
+      return {
+        _id: dep._id,
+        requestId: `DEP-${dep._id.toString().slice(-8).toUpperCase()}`,
+        amount: dep.amount,
+        paymentMethod: dep.channel || 'UPI / Bank Transfer',
+        channel: dep.channel || 'UPI / Bank Transfer',
+        paymentReference: dep.utr,
+        utr: dep.utr,
+        status: dep.status,
+        adminNote: dep.adminRemark || '',
+        adminRemark: dep.adminRemark || '',
+        approvedBy: dep.approvedBy,
+        approvedAt: dep.approvedAt,
+        createdAt: dep.createdAt,
+        updatedAt: dep.updatedAt,
+        user: {
+          _id: u._id || dep.userId,
+          name: userName,
+          phone: userPhone,
+          email: u.email || 'N/A',
+          inviteCode: u.inviteCode || 'N/A',
+          vipLevel: u.vipLevel ?? 0,
+          status: u.status || 'active',
+          avatar: u.avatar || 'av1',
+          createdAt: u.createdAt || null,
+          wallet: u.wallet || { availableBalance: 0, rechargeBalance: 0, totalIncome: 0, totalWithdrawn: 0 },
+          bankAccount: u.bankAccount || { realName: '', ifsc: '', accountNumber: '', isBound: false },
+        },
+      };
+    });
 
     return res.json({
       status: 'success',
@@ -359,6 +406,7 @@ export const getDeposits = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('[Admin] getDeposits error:', error);
     return res.status(500).json({ status: 'failed', success: false, message: 'Error fetching deposits' });
   }
 };
@@ -525,20 +573,82 @@ export const getWithdrawals = async (req, res) => {
 
     if (search && search.trim()) {
       const term = search.trim();
+      const matchedUsers = await User.find({
+        $or: [
+          { name: { $regex: term, $options: 'i' } },
+          { phone: { $regex: term, $options: 'i' } },
+          { email: { $regex: term, $options: 'i' } },
+          { inviteCode: { $regex: term, $options: 'i' } },
+        ],
+      }).select('_id');
+      const userIds = matchedUsers.map((u) => u._id);
+
       filter.$or = [
         { userPhone: { $regex: term, $options: 'i' } },
         { 'bankDetails.accountNumber': { $regex: term, $options: 'i' } },
         { 'bankDetails.realName': { $regex: term, $options: 'i' } },
+        { 'bankDetails.ifsc': { $regex: term, $options: 'i' } },
         { payoutReference: { $regex: term, $options: 'i' } },
+        { userId: { $in: userIds } },
       ];
     }
 
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
     const total = await Withdrawal.countDocuments(filter);
-    const withdrawals = await Withdrawal.find(filter)
+    const rawWithdrawals = await Withdrawal.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit, 10));
+      .limit(parseInt(limit, 10))
+      .populate('userId', 'name phone email inviteCode vipLevel avatar wallet bankAccount status createdAt');
+
+    const withdrawals = rawWithdrawals.map((wth) => {
+      const u = wth.userId && typeof wth.userId === 'object' ? wth.userId : {};
+      const userPhone = wth.userPhone || u.phone || '';
+      const bDetails = wth.bankDetails || u.bankAccount || {};
+      const userName = u.name || bDetails.realName || (userPhone ? `Member (${userPhone.slice(-4)})` : 'Member');
+
+      return {
+        _id: wth._id,
+        requestId: `WTH-${wth._id.toString().slice(-8).toUpperCase()}`,
+        amount: wth.amount,
+        fee: wth.fee || 0,
+        netAmount: wth.receiveAmount || (wth.amount - (wth.fee || 0)),
+        receiveAmount: wth.receiveAmount,
+        payoutMethod: 'Bank IMPS / NEFT',
+        payoutReference: wth.payoutReference || '',
+        bankDetails: {
+          realName: bDetails.realName || userName,
+          ifsc: bDetails.ifsc || 'N/A',
+          accountNumber: bDetails.accountNumber || 'N/A',
+        },
+        payoutDestinationSnapshot: {
+          accountNumber: bDetails.accountNumber || 'N/A',
+          ifsc: bDetails.ifsc || 'N/A',
+          realName: bDetails.realName || userName,
+          accountNumberMasked: bDetails.accountNumber ? `••••${String(bDetails.accountNumber).slice(-4)}` : 'N/A',
+        },
+        status: wth.status,
+        adminNote: wth.adminRemark || '',
+        adminRemark: wth.adminRemark || '',
+        approvedBy: wth.approvedBy,
+        approvedAt: wth.approvedAt,
+        createdAt: wth.createdAt,
+        updatedAt: wth.updatedAt,
+        user: {
+          _id: u._id || wth.userId,
+          name: userName,
+          phone: userPhone,
+          email: u.email || 'N/A',
+          inviteCode: u.inviteCode || 'N/A',
+          vipLevel: u.vipLevel ?? 0,
+          status: u.status || 'active',
+          avatar: u.avatar || 'av1',
+          createdAt: u.createdAt || null,
+          wallet: u.wallet || { availableBalance: 0, rechargeBalance: 0, totalIncome: 0, totalWithdrawn: 0 },
+          bankAccount: u.bankAccount || bDetails,
+        },
+      };
+    });
 
     return res.json({
       status: 'success',
@@ -552,6 +662,7 @@ export const getWithdrawals = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('[Admin] getWithdrawals error:', error);
     return res.status(500).json({ status: 'failed', success: false, message: 'Error fetching withdrawals' });
   }
 };
