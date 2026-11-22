@@ -13,16 +13,22 @@ const PlanSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['regular', 'welfare'], // regular = Normal Plan, welfare = VIP Plan
       default: 'regular',
+      index: true,
+    },
+    description: {
+      type: String,
+      default: '',
     },
     price: {
       type: Number,
       required: true,
+      min: [1, 'Price must be positive'],
     },
     dailyIncome: {
       type: Number,
       required: true,
+      min: [0, 'Daily income must be non-negative'],
     },
     totalRevenue: {
       type: Number,
@@ -31,6 +37,7 @@ const PlanSchema = new mongoose.Schema(
     durationDays: {
       type: Number,
       required: true,
+      min: [1, 'Duration must be at least 1 day'],
     },
     limitPerUser: {
       type: Number,
@@ -51,13 +58,27 @@ const PlanSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'archived', 'inactive'],
+      default: 'active',
+      index: true,
     },
     sortOrder: {
       type: Number,
       default: 0,
     },
+    features: [
+      {
+        type: String,
+      },
+    ],
   },
   { timestamps: true }
 );
+
+PlanSchema.index({ isActive: 1, sortOrder: 1 });
 
 export default mongoose.model('Plan', PlanSchema);

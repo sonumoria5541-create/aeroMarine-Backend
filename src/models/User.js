@@ -3,11 +3,23 @@ import bcrypt from 'bcryptjs';
 
 const UserSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    email: {
+      type: String,
+      default: '',
+      trim: true,
+      lowercase: true,
+    },
     phone: {
       type: String,
       required: true,
       unique: true,
       trim: true,
+      index: true,
     },
     password: {
       type: String,
@@ -15,17 +27,55 @@ const UserSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'admin', 'owner', 'finance', 'support', 'operations'],
       default: 'user',
+      index: true,
     },
+    isProtectedOwner: {
+      type: Boolean,
+      default: false,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'suspended', 'blocked'],
+      default: 'active',
+      index: true,
+    },
+    statusReason: {
+      type: String,
+      default: '',
+    },
+    statusUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    statusUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    adminNotes: [
+      {
+        text: { type: String, required: true },
+        author: { type: String, default: 'admin' },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    permissions: [
+      {
+        type: String,
+      },
+    ],
     inviteCode: {
       type: String,
       unique: true,
       default: () => Math.floor(100000 + Math.random() * 900000).toString(),
+      index: true,
     },
     invitedBy: {
       type: String,
       default: null,
+      index: true,
     },
     vipLevel: {
       type: Number,
@@ -55,6 +105,14 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    lastLoginAt: {
+      type: Date,
+      default: Date.now,
+    },
+    lastLoginIp: {
+      type: String,
+      default: '',
+    },
   },
   { timestamps: true }
 );
@@ -70,5 +128,7 @@ UserSchema.methods.toSafeObject = function () {
   delete user.password;
   return user;
 };
+
+UserSchema.index({ createdAt: -1 });
 
 export default mongoose.model('User', UserSchema);
