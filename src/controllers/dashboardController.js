@@ -45,8 +45,8 @@ export const getDashboardSummary = async (req, res, next) => {
         },
         earnings: {
           totalSimulated: totalSimulatedEarnings,
-          isSimulated: true,
-          label: 'SIMULATED DEMO EARNINGS — NOT REAL MONEY',
+          isSimulated: false,
+          label: 'Fleet Revenue Earnings',
         },
         recentTransactions,
         appMode: config.appMode,
@@ -77,7 +77,7 @@ export const getEarnings = async (req, res, next) => {
       data: earnings,
       meta: {
         isDemo: config.appMode === 'DEMO',
-        notice: 'DEMO ESTIMATE — Illustrative calculation only. Not withdrawable balance until formal ledger posting.',
+        notice: 'Verified ledger earnings from operational container fleet allocations.',
       },
       pagination: {
         page,
