@@ -7,9 +7,13 @@ import Order from '../models/Order.js';
 import Record from '../models/Record.js';
 
 export const seedDatabase = async () => {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[CRITICAL] Destructive database seeding is strictly blocked in production!');
+    throw new Error('Database seeding is strictly forbidden in production mode to protect real user data.');
+  }
   try {
     await connectDB();
-    console.log('[Seed] Seeding database...');
+    console.log('[Seed] Seeding development database...');
 
     // Clear old data
     await User.deleteMany({});

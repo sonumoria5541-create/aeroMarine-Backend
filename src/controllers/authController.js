@@ -11,18 +11,24 @@ const setTokenCookie = (res, token) => {
   res.cookie('aeromarine_token', token, {
     httpOnly: true,
     secure: config.env === 'production',
-    sameSite: 'lax',
+    sameSite: config.env === 'production' ? 'none' : 'lax',
+    domain: config.cookieDomain || undefined,
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   });
 };
 
 export const login = async (req, res) => {
   try {
-    const phone = (req.body.phone || req.body.mobile || '').toString().trim();
+    const rawPhone = (req.body.phone || req.body.mobile || '').toString().trim();
+    const phone = rawPhone.replace(/\D/g, '').slice(-10); // Extract clean 10-digit phone
     const { password } = req.body;
 
     if (!phone || !password) {
-      return res.status(400).json({ status: 'failed', message: 'Missing mobile or password' });
+      return res.status(400).json({ status: 'failed', message: 'Missing mobile number or password' });
+    }
+
+    if (phone.length !== 10) {
+      return res.status(400).json({ status: 'failed', message: 'Please enter a valid 10-digit mobile number' });
     }
 
     const user = await User.findOne({ phone });
@@ -46,21 +52,26 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.error('[Auth] Login error:', error);
-    return res.status(500).json({ status: 'failed', message: 'Internal server error' });
+    return res.status(500).json({ status: 'failed', message: 'Internal server error during login' });
   }
 };
 
 export const register = async (req, res) => {
   try {
-    const phone = (req.body.phone || req.body.mobile || '').toString().trim();
+    const rawPhone = (req.body.phone || req.body.mobile || '').toString().trim();
+    const phone = rawPhone.replace(/\D/g, '').slice(-10);
     const { password, inviteCode } = req.body;
 
     if (!phone || !password) {
-      return res.status(400).json({ status: 'failed', message: 'Please provide phone and password' });
+      return res.status(400).json({ status: 'failed', message: 'Please provide mobile number and password' });
     }
 
     if (phone.length !== 10) {
       return res.status(400).json({ status: 'failed', message: 'Phone number must be exactly 10 digits' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ status: 'failed', message: 'Password must be at least 6 characters long' });
     }
 
     const existingUser = await User.findOne({ phone });
@@ -70,8 +81,8 @@ export const register = async (req, res) => {
 
     // Verify inviter if code provided
     let referrerCode = null;
-    if (inviteCode) {
-      const referrer = await User.findOne({ inviteCode: inviteCode.trim() });
+    if (inviteCode && inviteCode.toString().trim()) {
+      const referrer = await User.findOne({ inviteCode: inviteCode.toString().trim() });
       if (referrer) {
         referrerCode = referrer.inviteCode;
       }
@@ -127,10 +138,22 @@ export const updateBank = async (req, res) => {
       return res.status(400).json({ status: 'failed', message: 'Please fill in real name, IFSC code, and account number.' });
     }
 
+    const cleanRealName = realName.toString().trim().slice(0, 100);
+    const cleanIfsc = ifsc.toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+    const cleanAccount = accountNumber.toString().trim().replace(/[^0-9]/g, '').slice(0, 30);
+
+    if (cleanAccount.length < 8) {
+      return res.status(400).json({ status: 'failed', message: 'Bank account number must be at least 8 digits' });
+    }
+
+    if (cleanIfsc.length !== 11) {
+      return res.status(400).json({ status: 'failed', message: 'IFSC code must be exactly 11 characters (e.g., HDFC0001234)' });
+    }
+
     req.user.bankAccount = {
-      realName: realName.trim(),
-      ifsc: ifsc.trim().toUpperCase(),
-      accountNumber: accountNumber.trim(),
+      realName: cleanRealName,
+      ifsc: cleanIfsc,
+      accountNumber: cleanAccount,
       isBound: true,
     };
 
@@ -179,8 +202,8 @@ export const changePassword = async (req, res) => {
 export const updateAvatar = async (req, res) => {
   try {
     const { avatar } = req.body;
-    if (avatar) {
-      req.user.avatar = avatar;
+    if (avatar && typeof avatar === 'string') {
+      req.user.avatar = avatar.slice(0, 20);
       await req.user.save();
     }
     return res.json({
@@ -194,6 +217,11 @@ export const updateAvatar = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  res.clearCookie('aeromarine_token');
+  res.clearCookie('aeromarine_token', {
+    httpOnly: true,
+    secure: config.env === 'production',
+    sameSite: config.env === 'production' ? 'none' : 'lax',
+    domain: config.cookieDomain || undefined,
+  });
   return res.json({ status: 'success', message: 'Logged out successfully' });
 };

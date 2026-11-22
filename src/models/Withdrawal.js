@@ -11,14 +11,17 @@ const WithdrawalSchema = new mongoose.Schema(
     userPhone: {
       type: String,
       required: true,
+      index: true,
     },
     amount: {
       type: Number,
       required: true,
+      min: [1, 'Withdrawal amount must be positive'],
     },
     fee: {
       type: Number,
       required: true,
+      default: 0,
     },
     receiveAmount: {
       type: Number,
@@ -33,13 +36,34 @@ const WithdrawalSchema = new mongoose.Schema(
       type: String,
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
+      index: true,
     },
     adminRemark: {
       type: String,
       default: '',
     },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    payoutReference: {
+      type: String,
+      default: '',
+    },
+    idempotencyKey: {
+      type: String,
+      sparse: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );
+
+WithdrawalSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Withdrawal', WithdrawalSchema);

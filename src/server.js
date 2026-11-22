@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import app from './app.js';
 import { connectDB } from './config/db.js';
 import { config } from './config/env.js';
@@ -14,8 +15,14 @@ const startServer = async () => {
     console.log(`====================================================`);
   });
 
-  const handleShutdown = (signal) => {
+  const handleShutdown = async (signal) => {
     console.log(`[AeroMarine] Received ${signal}. Gracefully shutting down...`);
+    try {
+      await mongoose.connection.close();
+      console.log('[AeroMarine] MongoDB connection closed.');
+    } catch (e) {
+      console.error('[AeroMarine] Error closing MongoDB connection:', e);
+    }
     server.close(() => {
       console.log('[AeroMarine] HTTP server closed.');
       process.exit(0);

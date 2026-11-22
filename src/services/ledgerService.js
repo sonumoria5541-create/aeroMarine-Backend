@@ -602,18 +602,17 @@ export const reconcileWallet = async (userId) => {
 
   if (!isMatch) {
     console.warn(
-      `[Ledger Reconciliation Mismatch] User: ${userId}. Wallet Avail: ${wallet.availableBalancePaise}, Calculated: ${calculatedAvailablePaise}. Correcting wallet cache.`
+      `[Ledger Reconciliation Flag] Discrepancy detected for User: ${userId}. Recorded Available: ${wallet.availableBalancePaise} paise, Ledger Calculated: ${calculatedAvailablePaise} paise. Flagged for administrative review (no automated alteration).`
     );
-    wallet.availableBalancePaise = calculatedAvailablePaise;
-    wallet.reservedBalancePaise = calculatedReservedPaise;
-    wallet.lastReconciledAt = new Date();
-    await wallet.save();
   }
 
   return {
     isMatch,
-    availableBalance: toRupees(wallet.availableBalancePaise),
-    reservedBalance: toRupees(wallet.reservedBalancePaise),
+    recordedAvailableBalance: toRupees(wallet.availableBalancePaise),
+    recordedReservedBalance: toRupees(wallet.reservedBalancePaise),
+    ledgerCalculatedAvailable: toRupees(calculatedAvailablePaise),
+    ledgerCalculatedReserved: toRupees(calculatedReservedPaise),
+    discrepancyPaise: calculatedAvailablePaise - wallet.availableBalancePaise,
     lastReconciledAt: wallet.lastReconciledAt,
   };
 };

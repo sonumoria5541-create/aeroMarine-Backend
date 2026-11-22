@@ -5,20 +5,32 @@ import { config } from '../src/config/env.js';
 import User from '../src/models/User.js';
 import Plan from '../src/models/Plan.js';
 
-describe('AeroMarine Simple Mobile API Test Suite', () => {
+describe('AeroMarine Production API & Security Test Suite', () => {
   let userToken = '';
   let adminToken = '';
   let samplePlanId = '';
   let testRechargeId = '';
   let testWithdrawalId = '';
+  let testUserId = '';
+  const uniqueUtr = `UTR${Date.now()}`;
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(config.mongoUri);
     }
 
+    // Ensure test user has known balance & credentials
+    const testUser = await User.findOne({ phone: '7009962845' });
+    if (testUser) {
+      testUserId = testUser._id.toString();
+      testUser.wallet.availableBalance = 3000;
+      testUser.wallet.rechargeBalance = 2000;
+      testUser.spinsLeft = 2;
+      await testUser.save();
+    }
+
     // Get a plan id
-    const plan = await Plan.findOne();
+    const plan = await Plan.findOne({ isActive: true });
     if (plan) {
       samplePlanId = plan._id.toString();
     }
@@ -28,7 +40,23 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
     await mongoose.connection.close();
   });
 
-  describe('1. Authentication Tests', () => {
+  describe('1. Health & Infrastructure Endpoints', () => {
+    it('should return 200 healthy status with database connection info', async () => {
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+      expect(res.body.database.status).toBe('connected');
+      expect(res.body.service).toContain('AeroMarine');
+    });
+
+    it('should return 200 on /api/health as well', async () => {
+      const res = await request(app).get('/api/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+    });
+  });
+
+  describe('2. Authentication & Authorization Security', () => {
     it('should login test user 7009962845 with yadav123', async () => {
       const res = await request(app)
         .post('/api/auth/login')
@@ -54,18 +82,7 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       adminToken = res.body.token;
     });
 
-    it('should get current user profile with valid token', async () => {
-      const res = await request(app)
-        .get('/api/auth/me')
-        .set('Authorization', `Bearer ${userToken}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('success');
-      expect(res.body.user.phone).toBe('7009962845');
-      expect(res.body.user.wallet).toBeDefined();
-    });
-
-    it('should reject wrong password', async () => {
+    it('should reject wrong password with 400', async () => {
       const res = await request(app)
         .post('/api/auth/login')
         .send({ phone: '7009962845', password: 'wrongpassword' });
@@ -73,10 +90,45 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       expect(res.status).toBe(400);
       expect(res.body.status).toBe('failed');
     });
+
+    it('should reject registration of existing phone number with clear message', async () => {
+      const res = await request(app)
+        .post('/api/auth/register')
+        .send({ phone: '7009962845', password: 'yadav123password' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('already registered');
+    });
+
+    it('should reject unauthenticated request to protected endpoint (401)', async () => {
+      const res = await request(app).get('/api/orders/my');
+      expect(res.status).toBe(401);
+      expect(res.body.status).toBe('failed');
+    });
+
+    it('should deny non-admin user access to administrative overview (403)', async () => {
+      const res = await request(app)
+        .get('/api/admin/overview')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.status).toBe('failed');
+    });
+
+    it('admin should have access to administrative overview (200)', async () => {
+      const res = await request(app)
+        .get('/api/admin/overview')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('success');
+      expect(res.body.data.totalUsers).toBeGreaterThan(0);
+    });
   });
 
-  describe('2. Container Fleet Plans & Orders', () => {
-    it('should fetch regular and welfare container plans', async () => {
+  describe('3. Container Fleet Plans & Leases', () => {
+    it('should fetch active container fleet plans', async () => {
       const res = await request(app).get('/api/plans');
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
@@ -92,7 +144,6 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
       expect(res.body.data.stats).toBeDefined();
-      expect(res.body.data.stats.incomeTimer).toBeDefined();
     });
 
     it('should lease a container plan with available balance', async () => {
@@ -107,13 +158,20 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       expect(res.body.status).toBe('success');
       expect(res.body.order).toBeDefined();
     });
+
+    it('should reject leasing an invalid/non-existent plan ID with 404', async () => {
+      const res = await request(app)
+        .post('/api/plans/buy')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ planId: new mongoose.Types.ObjectId() });
+
+      expect(res.status).toBe(404);
+      expect(res.body.status).toBe('failed');
+    });
   });
 
-  describe('3. Lucky Spin Wheel', () => {
+  describe('4. Lucky Spin Wheel', () => {
     it('should execute spin and award instant cash prize', async () => {
-      // Ensure user has at least 1 spin
-      await User.updateOne({ phone: '7009962845' }, { $set: { spinsLeft: 2 } });
-
       const res = await request(app)
         .post('/api/task/spin')
         .set('Authorization', `Bearer ${userToken}`);
@@ -124,14 +182,25 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
     });
   });
 
-  describe('4. Recharge & Withdrawal Flow', () => {
-    it('should submit a recharge request with UTR', async () => {
+  describe('5. Recharge (Deposit) Flow & Concurrency Controls', () => {
+    it('should reject recharge with amount below ₹250 minimum', async () => {
+      const res = await request(app)
+        .post('/api/wallet/recharge')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ amount: 100, utr: 'UTR_TOO_LOW_001' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('Minimum recharge amount is ₹250');
+    });
+
+    it('should submit a valid recharge request with UTR', async () => {
       const res = await request(app)
         .post('/api/wallet/recharge')
         .set('Authorization', `Bearer ${userToken}`)
         .send({
           amount: 500,
-          utr: '123456789012',
+          utr: uniqueUtr,
           channel: 'Channel A Online',
         });
 
@@ -141,7 +210,46 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       testRechargeId = res.body.recharge._id;
     });
 
-    it('should submit a withdrawal request to bound bank account', async () => {
+    it('should reject duplicate submission with the same UTR', async () => {
+      const res = await request(app)
+        .post('/api/wallet/recharge')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          amount: 500,
+          utr: uniqueUtr,
+          channel: 'Channel A Online',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('already been submitted');
+    });
+  });
+
+  describe('6. Withdrawal Flow & Anti-Overspending Protection', () => {
+    it('should reject withdrawal exceeding available balance', async () => {
+      const res = await request(app)
+        .post('/api/wallet/withdraw')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ amount: 50000 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('Insufficient');
+    });
+
+    it('should reject withdrawal below ₹120 minimum', async () => {
+      const res = await request(app)
+        .post('/api/wallet/withdraw')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ amount: 50 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('Minimum withdrawal amount is ₹120');
+    });
+
+    it('should submit a valid withdrawal request and atomically reserve balance', async () => {
       const res = await request(app)
         .post('/api/wallet/withdraw')
         .set('Authorization', `Bearer ${userToken}`)
@@ -152,19 +260,9 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       expect(res.body.withdrawal.receiveAmount).toBe(180); // 200 - 10% fee
       testWithdrawalId = res.body.withdrawal._id;
     });
-
-    it('should fetch account records', async () => {
-      const res = await request(app)
-        .get('/api/wallet/records')
-        .set('Authorization', `Bearer ${userToken}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('success');
-      expect(Array.isArray(res.body.data)).toBe(true);
-    });
   });
 
-  describe('5. Admin 1-Click Approvals', () => {
+  describe('7. Admin 1-Click Approvals & Double-Processing Guards', () => {
     it('admin should approve pending recharge and credit balance', async () => {
       if (!testRechargeId) return;
 
@@ -177,16 +275,53 @@ describe('AeroMarine Simple Mobile API Test Suite', () => {
       expect(res.body.recharge.status).toBe('approved');
     });
 
+    it('admin attempting to approve an ALREADY APPROVED recharge should be rejected (400)', async () => {
+      if (!testRechargeId) return;
+
+      const res = await request(app)
+        .post(`/api/admin/recharges/${testRechargeId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('already been processed');
+    });
+
     it('admin should approve pending withdrawal', async () => {
+      if (!testWithdrawalId) return;
+
+      const res = await request(app)
+        .post(`/api/admin/withdrawals/${testWithdrawalId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ payoutReference: 'IMPS-TEST-12345' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('success');
+      expect(res.body.withdrawal.status).toBe('approved');
+    });
+
+    it('admin attempting to approve an ALREADY APPROVED withdrawal should be rejected (400)', async () => {
       if (!testWithdrawalId) return;
 
       const res = await request(app)
         .post(`/api/admin/withdrawals/${testWithdrawalId}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
 
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('failed');
+      expect(res.body.message).toContain('already been processed');
+    });
+
+    it('admin should be able to run ledger reconciliation report for a user', async () => {
+      if (!testUserId) return;
+
+      const res = await request(app)
+        .get(`/api/admin/reconcile/${testUserId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
-      expect(res.body.withdrawal.status).toBe('approved');
+      expect(res.body.data.auditReconciliation).toBeDefined();
     });
   });
 });

@@ -1,6 +1,8 @@
 import Order from '../models/Order.js';
 import Record from '../models/Record.js';
 import User from '../models/User.js';
+import { creditEarning } from '../services/ledgerService.js';
+import { config } from '../config/env.js';
 
 export const getMyOrders = async (req, res) => {
   try {
@@ -50,30 +52,65 @@ export const claimDailyYield = async (req, res) => {
 
     let totalClaimed = 0;
     const now = new Date();
+    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
     for (const order of activeOrders) {
-      // Check if at least 12 hours passed since last yield or newly purchased
-      const last = order.lastYieldAt ? new Date(order.lastYieldAt).getTime() : 0;
-      const hoursSince = (now.getTime() - last) / (1000 * 60 * 60);
+      // Atomic Guard: update only if at least 12 hours elapsed or never claimed
+      // Prevents concurrent multi-click double-earnings
+      const claimedOrder = await Order.findOneAndUpdate(
+        {
+          _id: order._id,
+          status: 'running',
+          $or: [
+            { lastYieldAt: { $lte: twelveHoursAgo } },
+            { lastYieldAt: null },
+          ],
+        },
+        {
+          $set: { lastYieldAt: now },
+          $inc: {
+            totalEarned: order.dailyIncome,
+            daysRemaining: -1,
+          },
+        },
+        { new: true }
+      );
 
-      // If user hasn't claimed in last 12 hours or never claimed
-      if (hoursSince >= 12 || !order.lastYieldAt) {
-        order.totalEarned += order.dailyIncome;
-        order.daysRemaining = Math.max(0, order.daysRemaining - 1);
-        if (order.daysRemaining <= 0) {
-          order.status = 'completed';
-        }
-        order.lastYieldAt = now;
-        await order.save();
-
+      if (claimedOrder) {
         totalClaimed += order.dailyIncome;
+
+        if (claimedOrder.daysRemaining <= 0) {
+          claimedOrder.status = 'completed';
+          await claimedOrder.save();
+        }
+
+        // Ledger sync per plan
+        try {
+          await creditEarning({
+            userId: user._id,
+            amount: order.dailyIncome,
+            period: new Date().toISOString().split('T')[0],
+            planName: order.planName,
+            referenceId: order._id.toString(),
+            isDemo: config.appMode === 'DEMO',
+          });
+        } catch (ledgerErr) {
+          console.warn('[Ledger Notice] Background earning ledger sync:', ledgerErr.message);
+        }
       }
     }
 
     if (totalClaimed > 0) {
-      user.wallet.availableBalance = (user.wallet.availableBalance || 0) + totalClaimed;
-      user.wallet.totalIncome = (user.wallet.totalIncome || 0) + totalClaimed;
-      await user.save();
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        {
+          $inc: {
+            'wallet.availableBalance': totalClaimed,
+            'wallet.totalIncome': totalClaimed,
+          },
+        },
+        { new: true }
+      );
 
       await Record.create({
         userId: user._id,
@@ -88,7 +125,7 @@ export const claimDailyYield = async (req, res) => {
         status: 'success',
         message: `Successfully collected ₹${totalClaimed} daily freight earnings!`,
         totalClaimed,
-        wallet: user.wallet,
+        wallet: updatedUser.wallet,
       });
     }
 

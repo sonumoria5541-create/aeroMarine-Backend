@@ -2,27 +2,48 @@ import Recharge from '../models/Recharge.js';
 import Withdrawal from '../models/Withdrawal.js';
 import Record from '../models/Record.js';
 import User from '../models/User.js';
+import { config } from '../config/env.js';
+import { queueAndSendEmail } from '../services/emailService.js';
+import { reserveWithdrawal } from '../services/ledgerService.js';
 
 export const submitRecharge = async (req, res) => {
   try {
     const user = req.user;
     const { amount, channel = 'Channel A Online', utr } = req.body;
 
-    const numAmount = Number(amount);
-    if (!numAmount || numAmount < 250) {
+    const numAmount = Math.floor(Number(amount));
+    if (!numAmount || isNaN(numAmount) || numAmount < 250) {
       return res.status(400).json({ status: 'failed', message: 'Minimum recharge amount is ₹250' });
     }
 
-    if (!utr || utr.trim().length < 6) {
+    if (numAmount > 10000000) {
+      return res.status(400).json({ status: 'failed', message: 'Amount exceeds maximum permitted single recharge limit' });
+    }
+
+    const cleanUtr = (utr || '').toString().trim();
+    if (cleanUtr.length < 6 || cleanUtr.length > 30) {
       return res.status(400).json({ status: 'failed', message: 'Please enter a valid 12-digit UTR / Reference number' });
+    }
+
+    // Prevent duplicate UTR submission across pending/approved requests
+    const existingRecharge = await Recharge.findOne({
+      utr: cleanUtr,
+      status: { $in: ['pending', 'approved'] },
+    });
+
+    if (existingRecharge) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'This UTR / Reference number has already been submitted or verified.',
+      });
     }
 
     const recharge = new Recharge({
       userId: user._id,
       userPhone: user.phone,
       amount: numAmount,
-      channel,
-      utr: utr.trim(),
+      channel: channel.slice(0, 50),
+      utr: cleanUtr,
       status: 'pending',
     });
     await recharge.save();
@@ -38,6 +59,25 @@ export const submitRecharge = async (req, res) => {
     });
     await record.save();
 
+    // Trigger asynchronous administrative email notification
+    try {
+      if (config.adminNotificationEmail) {
+        await queueAndSendEmail({
+          recipient: config.adminNotificationEmail,
+          template: 'admin_deposit_alert',
+          data: {
+            amount: numAmount,
+            phone: user.phone,
+            reference: cleanUtr,
+            channel: recharge.channel,
+          },
+          eventKey: `recharge_req_${recharge._id}`,
+        });
+      }
+    } catch (emailErr) {
+      console.warn('[Email Service Notice] Could not queue deposit notification email:', emailErr.message);
+    }
+
     return res.status(201).json({
       status: 'success',
       message: 'Recharge submitted successfully! Balance will be credited automatically once verified.',
@@ -45,7 +85,7 @@ export const submitRecharge = async (req, res) => {
     });
   } catch (error) {
     console.error('[Wallet] Recharge error:', error);
-    return res.status(500).json({ status: 'failed', message: 'Error submitting recharge' });
+    return res.status(500).json({ status: 'failed', message: 'Error submitting recharge request' });
   }
 };
 
@@ -61,13 +101,33 @@ export const submitWithdrawal = async (req, res) => {
       });
     }
 
-    const numAmount = Number(amount);
-    if (!numAmount || numAmount < 120) {
+    const numAmount = Math.floor(Number(amount));
+    if (!numAmount || isNaN(numAmount) || numAmount < 120) {
       return res.status(400).json({ status: 'failed', message: 'Minimum withdrawal amount is ₹120' });
     }
 
-    const currentBalance = user.wallet.availableBalance || 0;
-    if (currentBalance < numAmount) {
+    if (numAmount > 1000000) {
+      return res.status(400).json({ status: 'failed', message: 'Amount exceeds maximum permitted single withdrawal' });
+    }
+
+    // Atomic Guard: Verify and reserve available balance in one atomic database operation
+    // This strictly prevents double-spending and race conditions from concurrent requests
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        'wallet.availableBalance': { $gte: numAmount },
+      },
+      {
+        $inc: {
+          'wallet.availableBalance': -numAmount,
+          'wallet.totalWithdrawn': numAmount,
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      const currentBalance = user.wallet?.availableBalance || 0;
       return res.status(400).json({
         status: 'failed',
         message: `Insufficient withdrawable balance. Available: ₹${currentBalance}, requested: ₹${numAmount}`,
@@ -76,11 +136,6 @@ export const submitWithdrawal = async (req, res) => {
 
     const fee = Math.round(numAmount * 0.10); // 10% fee
     const receiveAmount = numAmount - fee;
-
-    // Deduct immediately from availableBalance
-    user.wallet.availableBalance -= numAmount;
-    user.wallet.totalWithdrawn = (user.wallet.totalWithdrawn || 0) + numAmount;
-    await user.save();
 
     const withdrawal = new Withdrawal({
       userId: user._id,
@@ -108,11 +163,46 @@ export const submitWithdrawal = async (req, res) => {
     });
     await record.save();
 
+    // Dual-entry Ledger Reservation
+    try {
+      await reserveWithdrawal({
+        userId: user._id,
+        amount: numAmount,
+        fee,
+        netAmount: receiveAmount,
+        referenceId: withdrawal._id.toString(),
+        isDemo: config.appMode === 'DEMO',
+      });
+    } catch (ledgerErr) {
+      console.warn('[Ledger Notice] Background ledger reservation sync:', ledgerErr.message);
+    }
+
+    // Trigger Admin Email Notification
+    try {
+      if (config.adminNotificationEmail) {
+        await queueAndSendEmail({
+          recipient: config.adminNotificationEmail,
+          template: 'admin_withdrawal_alert',
+          data: {
+            amount: numAmount,
+            receiveAmount,
+            phone: user.phone,
+            accountNumber: user.bankAccount.accountNumber,
+            ifsc: user.bankAccount.ifsc,
+            realName: user.bankAccount.realName,
+          },
+          eventKey: `withdrawal_req_${withdrawal._id}`,
+        });
+      }
+    } catch (emailErr) {
+      console.warn('[Email Service Notice] Could not queue withdrawal notification email:', emailErr.message);
+    }
+
     return res.status(201).json({
       status: 'success',
       message: 'Withdrawal submitted! Requests are reviewed and credited within banking hours (06:00 - 19:00).',
       withdrawal,
-      wallet: user.wallet,
+      wallet: updatedUser.wallet,
     });
   } catch (error) {
     console.error('[Wallet] Withdrawal error:', error);
@@ -122,13 +212,15 @@ export const submitWithdrawal = async (req, res) => {
 
 export const getRecords = async (req, res) => {
   try {
-    const { tab } = req.query; // 'all', 'withdraw', 'recharge'
+    const { tab } = req.query;
     const filter = { userId: req.user._id };
 
     if (tab === 'withdraw') {
       filter.category = 'withdraw';
     } else if (tab === 'recharge') {
       filter.category = 'recharge';
+    } else if (tab && ['order', 'yield', 'commission', 'reward'].includes(tab)) {
+      filter.category = tab;
     }
 
     const records = await Record.find(filter).sort({ createdAt: -1 }).limit(100);

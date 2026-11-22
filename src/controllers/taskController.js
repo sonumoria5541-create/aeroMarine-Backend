@@ -7,22 +7,42 @@ export const spinWheel = async (req, res) => {
   try {
     const user = req.user;
 
-    if (!user.spinsLeft || user.spinsLeft <= 0) {
+    // Atomic Guard: Decrement spin count atomically with a conditional check
+    // Prevents concurrent requests from consuming more spins than available
+    const decrementedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        spinsLeft: { $gt: 0 },
+      },
+      {
+        $inc: { spinsLeft: -1 },
+        $set: { lastSpinAt: new Date() },
+      },
+      { new: true }
+    );
+
+    if (!decrementedUser) {
       return res.status(400).json({
         status: 'failed',
         message: 'No spins left! Lease an active container plan on the Home page to unlock free daily spins.',
       });
     }
 
-    // Pick random index
+    // Pick random prize index
     const randomIndex = Math.floor(Math.random() * WHEEL_PRIZES.length);
     const prizeAmount = WHEEL_PRIZES[randomIndex];
 
-    user.spinsLeft -= 1;
-    user.lastSpinAt = new Date();
-    user.wallet.availableBalance = (user.wallet.availableBalance || 0) + prizeAmount;
-    user.wallet.totalIncome = (user.wallet.totalIncome || 0) + prizeAmount;
-    await user.save();
+    // Atomically credit the prize reward to the user's wallet
+    const finalUser = await User.findByIdAndUpdate(
+      user._id,
+      {
+        $inc: {
+          'wallet.availableBalance': prizeAmount,
+          'wallet.totalIncome': prizeAmount,
+        },
+      },
+      { new: true }
+    );
 
     await Record.create({
       userId: user._id,
@@ -38,11 +58,11 @@ export const spinWheel = async (req, res) => {
       message: `Congratulations! You won ₹${prizeAmount} cash reward!`,
       prize: prizeAmount,
       targetIndex: randomIndex,
-      spinsLeft: user.spinsLeft,
-      wallet: user.wallet,
+      spinsLeft: finalUser.spinsLeft,
+      wallet: finalUser.wallet,
     });
   } catch (error) {
     console.error('[Task] Spin error:', error);
-    return res.status(500).json({ status: 'failed', message: 'Error processing spin' });
+    return res.status(500).json({ status: 'failed', message: 'Error processing lucky cargo spin' });
   }
 };

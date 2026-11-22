@@ -12,6 +12,7 @@ const OrderSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Plan',
       required: true,
+      index: true,
     },
     planName: {
       type: String,
@@ -20,10 +21,12 @@ const OrderSchema = new mongoose.Schema(
     price: {
       type: Number,
       required: true,
+      min: [1, 'Price must be positive'],
     },
     dailyIncome: {
       type: Number,
       required: true,
+      min: [0, 'Daily income must be non-negative'],
     },
     totalRevenue: {
       type: Number,
@@ -32,6 +35,7 @@ const OrderSchema = new mongoose.Schema(
     durationDays: {
       type: Number,
       required: true,
+      min: [1, 'Duration must be at least 1 day'],
     },
     daysRemaining: {
       type: Number,
@@ -45,13 +49,18 @@ const OrderSchema = new mongoose.Schema(
       type: String,
       enum: ['running', 'completed'],
       default: 'running',
+      index: true,
     },
     lastYieldAt: {
       type: Date,
       default: Date.now,
+      index: true,
     },
   },
   { timestamps: true }
 );
+
+OrderSchema.index({ userId: 1, status: 1 });
+OrderSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Order', OrderSchema);

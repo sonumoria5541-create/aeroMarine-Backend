@@ -11,10 +11,12 @@ const RechargeSchema = new mongoose.Schema(
     userPhone: {
       type: String,
       required: true,
+      index: true,
     },
     amount: {
       type: Number,
       required: true,
+      min: [1, 'Recharge amount must be positive'],
     },
     channel: {
       type: String,
@@ -24,18 +26,36 @@ const RechargeSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      index: true,
     },
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
+      index: true,
     },
     adminRemark: {
       type: String,
       default: '',
     },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    idempotencyKey: {
+      type: String,
+      sparse: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );
+
+RechargeSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Recharge', RechargeSchema);
