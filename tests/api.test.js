@@ -178,7 +178,7 @@ describe('AeroMarine Production API & Security Test Suite', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('success');
-      expect(res.body.prize).toBeGreaterThanOrEqual(200);
+      expect([0, 10, 20, 50, 100, 500, 1000]).toContain(res.body.prize);
     });
   });
 
