@@ -8,6 +8,8 @@ import * as walletController from '../controllers/walletController.js';
 import * as teamController from '../controllers/teamController.js';
 import * as taskController from '../controllers/taskController.js';
 import * as adminController from '../controllers/adminController.js';
+import * as uploadController from '../controllers/uploadController.js';
+import { uploadPaymentProof } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -32,6 +34,12 @@ router.get('/orders/my', authenticate, orderController.getMyOrders);
 router.post('/orders/claim', authenticate, financialLimiter, orderController.claimDailyYield);
 
 // Wallet & Financial Transactions (Rate-limited to prevent race conditions)
+router.post(
+  '/upload/payment-screenshot',
+  authenticate,
+  uploadPaymentProof.single('screenshot'),
+  uploadController.uploadPaymentScreenshot
+);
 router.post('/wallet/recharge', authenticate, financialLimiter, walletController.submitRecharge);
 router.post('/wallet/withdraw', authenticate, financialLimiter, walletController.submitWithdrawal);
 router.get('/wallet/records', authenticate, walletController.getRecords);

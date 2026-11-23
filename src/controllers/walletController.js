@@ -9,7 +9,7 @@ import { reserveWithdrawal } from '../services/ledgerService.js';
 export const submitRecharge = async (req, res) => {
   try {
     const user = req.user;
-    const { amount, channel = 'Channel A Online', utr } = req.body;
+    const { amount, channel = 'Channel 1 (VIP Fast UPI)', utr, proofUrl, proofPublicId } = req.body;
 
     const numAmount = Math.floor(Number(amount));
     if (!numAmount || isNaN(numAmount) || numAmount < 250) {
@@ -23,6 +23,14 @@ export const submitRecharge = async (req, res) => {
     const cleanUtr = (utr || '').toString().trim();
     if (cleanUtr.length < 6 || cleanUtr.length > 30) {
       return res.status(400).json({ status: 'failed', message: 'Please enter a valid 12-digit UTR / Reference number' });
+    }
+
+    const cleanProofUrl = (proofUrl || '').toString().trim();
+    if (!cleanProofUrl) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'Payment screenshot is strictly required. Please upload your payment proof before submitting.',
+      });
     }
 
     // Prevent duplicate UTR submission across pending/approved requests
@@ -44,6 +52,8 @@ export const submitRecharge = async (req, res) => {
       amount: numAmount,
       channel: channel.slice(0, 50),
       utr: cleanUtr,
+      proofUrl: cleanProofUrl,
+      proofPublicId: (proofPublicId || '').toString().trim(),
       status: 'pending',
     });
     await recharge.save();

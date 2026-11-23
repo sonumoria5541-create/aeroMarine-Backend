@@ -371,6 +371,8 @@ export const getDeposits = async (req, res) => {
         channel: dep.channel || 'UPI / Bank Transfer',
         paymentReference: dep.utr,
         utr: dep.utr,
+        proofUrl: dep.proofUrl || dep.screenshotUrl || '',
+        proofPublicId: dep.proofPublicId || '',
         status: dep.status,
         adminNote: dep.adminRemark || '',
         adminRemark: dep.adminRemark || '',

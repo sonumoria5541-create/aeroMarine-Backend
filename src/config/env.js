@@ -1,4 +1,12 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Explicitly load server/.env regardless of process.cwd()
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
 export const config = {
@@ -22,5 +30,11 @@ export const config = {
   realMoneyEnabled: process.env.REAL_MONEY_ENABLED === 'true',
   complianceApproved: process.env.COMPLIANCE_APPROVED === 'true',
   uploadProvider: process.env.UPLOAD_PROVIDER || 'local',
-  uploadMaxSizeMb: parseInt(process.env.UPLOAD_MAX_SIZE_MB, 10) || 5,
+  uploadMaxSizeMb: parseInt(process.env.UPLOAD_MAX_SIZE_MB, 10) || 10,
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    url: process.env.CLOUDINARY_URL || '',
+  },
 };

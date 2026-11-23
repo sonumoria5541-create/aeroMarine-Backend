@@ -11,30 +11,29 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `proof-${uniqueSuffix}${ext}`);
-  },
-});
+// Memory storage for direct Cloudinary streaming & local fallback handling
+const memoryStorage = multer.memoryStorage();
 
-const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (allowedMimeTypes.includes(file.mimetype)) {
+const imageFileFilter = (req, file, cb) => {
+  const allowedMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/jpg',
+    'image/heic',
+    'image/heif',
+  ];
+  if (allowedMimeTypes.includes(file.mimetype) || file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPG, PNG, WEBP and PDF files are accepted.'), false);
+    cb(new Error('Invalid file type. Please upload a valid image screenshot (JPG, PNG, WebP).'), false);
   }
 };
 
 export const uploadPaymentProof = multer({
-  storage,
+  storage: memoryStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
-  fileFilter,
+  fileFilter: imageFileFilter,
 });

@@ -20,13 +20,23 @@ const RechargeSchema = new mongoose.Schema(
     },
     channel: {
       type: String,
-      default: 'Channel A Online',
+      default: 'Channel 1 (VIP Fast UPI / QR)',
     },
     utr: {
       type: String,
       required: true,
       trim: true,
       index: true,
+    },
+    proofUrl: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    proofPublicId: {
+      type: String,
+      default: '',
+      trim: true,
     },
     status: {
       type: String,
