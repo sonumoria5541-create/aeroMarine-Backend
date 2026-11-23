@@ -13,8 +13,32 @@ export const getPlans = async (req, res) => {
       filter.category = category;
     }
 
-    const plans = await Plan.find(filter).sort({ sortOrder: 1, price: 1 });
-    return res.json({ status: 'success', data: plans });
+    const plans = await Plan.find(filter).sort({ sortOrder: 1, price: 1 }).lean();
+
+    // Map user's active orders count per plan if user is authenticated
+    const userOrderCounts = {};
+    if (req.user) {
+      const userOrders = await Order.aggregate([
+        { $match: { userId: req.user._id, status: 'running' } },
+        { $group: { _id: '$planId', count: { $sum: 1 } } },
+      ]);
+      userOrders.forEach((o) => {
+        if (o._id) {
+          userOrderCounts[o._id.toString()] = o.count;
+        }
+      });
+    }
+
+    const plansWithCount = plans.map((plan) => {
+      const planIdStr = plan._id.toString();
+      const purchasedCount = userOrderCounts[planIdStr] || 0;
+      return {
+        ...plan,
+        purchasedCount,
+      };
+    });
+
+    return res.json({ status: 'success', data: plansWithCount });
   } catch (error) {
     console.error('[Plan] Get plans error:', error);
     return res.status(500).json({ status: 'failed', message: 'Error retrieving plans' });
@@ -214,11 +238,18 @@ export const buyPlan = async (req, res) => {
       console.error('[Plan] Referral commission distribution error:', commError);
     }
 
+    const activeCount = await Order.countDocuments({
+      userId: user._id,
+      planId: plan._id,
+      status: 'running',
+    });
+
     return res.status(201).json({
       status: 'success',
       message: 'Container fleet contract leased successfully!',
       order,
       wallet: updatedUser.wallet,
+      purchasedCount: activeCount,
     });
   } catch (error) {
     console.error('[Plan] Buy error:', error);

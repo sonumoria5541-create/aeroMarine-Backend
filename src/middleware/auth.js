@@ -41,6 +41,31 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
+export const optionalAuthenticate = async (req, res, next) => {
+  try {
+    let token = null;
+
+    if (req.cookies && req.cookies.aeromarine_token) {
+      token = req.cookies.aeromarine_token;
+    } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.headers['x-auth-token']) {
+      token = req.headers['x-auth-token'];
+    }
+
+    if (token) {
+      const decoded = jwt.verify(token, config.jwtAccessSecret);
+      const user = await User.findById(decoded.userId);
+      if (user && user.status !== 'blocked' && user.status !== 'suspended') {
+        req.user = user;
+      }
+    }
+  } catch (error) {
+    // Non-blocking: continue as guest if unauthenticated or token is expired
+  }
+  next();
+};
+
 export const requireAdmin = (req, res, next) => {
   const adminRoles = ['admin', 'owner', 'finance', 'support', 'operations'];
   if (!req.user || !adminRoles.includes(req.user.role)) {

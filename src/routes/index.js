@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, optionalAuthenticate, requireAdmin } from '../middleware/auth.js';
 import { authLimiter, financialLimiter } from '../middleware/rateLimiter.js';
 import * as authController from '../controllers/authController.js';
 import * as planController from '../controllers/planController.js';
@@ -24,7 +24,7 @@ router.post('/auth/change-password', authenticate, authLimiter, authController.c
 router.post('/auth/avatar', authenticate, authController.updateAvatar);
 
 // Container Fleet Plan routes
-router.get('/plans', planController.getPlans);
+router.get('/plans', optionalAuthenticate, planController.getPlans);
 router.post('/plans/buy', authenticate, financialLimiter, planController.buyPlan);
 
 // Active Container Leases & Daily Yields
