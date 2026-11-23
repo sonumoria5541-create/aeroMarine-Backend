@@ -1,5 +1,11 @@
+import dns from 'dns';
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (e) {}
+
 import request from 'supertest';
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 import app from '../src/app.js';
 import { config } from '../src/config/env.js';
 import User from '../src/models/User.js';
@@ -27,6 +33,22 @@ describe('AeroMarine Production API & Security Test Suite', () => {
       testUser.wallet.rechargeBalance = 2000;
       testUser.spinsLeft = 2;
       await testUser.save();
+    }
+
+    // Ensure test admin exists
+    let adminUser = await User.findOne({ phone: '9999999999' });
+    if (!adminUser) {
+      const hashed = await bcrypt.hash('admin123', 10);
+      adminUser = await User.create({
+        phone: '9999999999',
+        password: hashed,
+        role: 'admin',
+        inviteCode: '999999',
+      });
+    } else {
+      adminUser.role = 'admin';
+      adminUser.password = await bcrypt.hash('admin123', 10);
+      await adminUser.save();
     }
 
     // Get a plan id
@@ -183,15 +205,15 @@ describe('AeroMarine Production API & Security Test Suite', () => {
   });
 
   describe('5. Recharge (Deposit) Flow & Concurrency Controls', () => {
-    it('should reject recharge with amount below ₹250 minimum', async () => {
+    it('should reject recharge with amount below ₹750 minimum', async () => {
       const res = await request(app)
         .post('/api/wallet/recharge')
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ amount: 100, utr: 'UTR_TOO_LOW_001' });
+        .send({ amount: 100, utr: 'UTR_TOO_LOW_001', proofUrl: 'https://cloudinary.com/test.jpg' });
 
       expect(res.status).toBe(400);
       expect(res.body.status).toBe('failed');
-      expect(res.body.message).toContain('Minimum recharge amount is ₹250');
+      expect(res.body.message).toContain('Minimum recharge amount is ₹750');
     });
 
     it('should submit a valid recharge request with UTR', async () => {
@@ -199,9 +221,10 @@ describe('AeroMarine Production API & Security Test Suite', () => {
         .post('/api/wallet/recharge')
         .set('Authorization', `Bearer ${userToken}`)
         .send({
-          amount: 500,
+          amount: 750,
           utr: uniqueUtr,
-          channel: 'Channel A Online',
+          channel: 'Channel 1 (VIP Fast UPI)',
+          proofUrl: 'https://cloudinary.com/test.jpg',
         });
 
       expect(res.status).toBe(201);
@@ -215,9 +238,10 @@ describe('AeroMarine Production API & Security Test Suite', () => {
         .post('/api/wallet/recharge')
         .set('Authorization', `Bearer ${userToken}`)
         .send({
-          amount: 500,
+          amount: 750,
           utr: uniqueUtr,
-          channel: 'Channel A Online',
+          channel: 'Channel 1 (VIP Fast UPI)',
+          proofUrl: 'https://cloudinary.com/test.jpg',
         });
 
       expect(res.status).toBe(400);

@@ -24,9 +24,19 @@ export const loginSchema = z.object({
   }),
 });
 
+export const ALLOWED_FLEET_AMOUNTS = [
+  750, 1000, 2000, 3000, 4500, 5500, 6500, 8000, 10000, 15000, 25000, 251000,
+];
+
 export const depositSchema = z.object({
   body: z.object({
-    amount: z.coerce.number().min(100, 'Minimum deposit is ₹100').max(10000000, 'Exceeds maximum single deposit limit'),
+    amount: z.coerce
+      .number()
+      .min(750, 'Minimum deposit is ₹750')
+      .refine((val) => ALLOWED_FLEET_AMOUNTS.includes(val), {
+        message:
+          'Deposit amount must match a fleet container plan (₹750, ₹1000, ₹2000, ₹3000, ₹4500, ₹5500, ₹6500, ₹8000, ₹10000, ₹15000, ₹25000, or ₹251000)',
+      }),
     paymentMethod: z.enum(['bank_transfer', 'upi', 'demo_transfer']).default('upi'),
     paymentReference: z.string().min(4, 'UTR / Payment reference is required'),
     idempotencyKey: z.string().optional(),

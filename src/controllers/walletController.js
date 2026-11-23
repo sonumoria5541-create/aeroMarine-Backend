@@ -6,14 +6,26 @@ import { config } from '../config/env.js';
 import { queueAndSendEmail } from '../services/emailService.js';
 import { reserveWithdrawal } from '../services/ledgerService.js';
 
+export const ALLOWED_FLEET_RECHARGE_AMOUNTS = [
+  750, 1000, 2000, 3000, 4500, 5500, 6500, 8000, 10000, 15000, 25000, 251000
+];
+
 export const submitRecharge = async (req, res) => {
   try {
     const user = req.user;
     const { amount, channel = 'Channel 1 (VIP Fast UPI)', utr, proofUrl, proofPublicId } = req.body;
 
     const numAmount = Math.floor(Number(amount));
-    if (!numAmount || isNaN(numAmount) || numAmount < 250) {
-      return res.status(400).json({ status: 'failed', message: 'Minimum recharge amount is ₹250' });
+    if (!numAmount || isNaN(numAmount) || numAmount < 750) {
+      return res.status(400).json({ status: 'failed', message: 'Minimum recharge amount is ₹750' });
+    }
+
+    if (!ALLOWED_FLEET_RECHARGE_AMOUNTS.includes(numAmount)) {
+      return res.status(400).json({
+        status: 'failed',
+        message:
+          'Deposit amount must match a fleet container plan (₹750, ₹1000, ₹2000, ₹3000, ₹4500, ₹5500, ₹6500, ₹8000, ₹10000, ₹15000, ₹25000, or ₹251000)',
+      });
     }
 
     if (numAmount > 10000000) {

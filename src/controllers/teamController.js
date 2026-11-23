@@ -7,18 +7,32 @@ export const getTeamData = async (req, res) => {
   try {
     const user = req.user;
 
-    // Find Level 1 members
-    const l1Users = await User.find({ invitedBy: user.inviteCode }).select('phone createdAt wallet');
-    const l1Codes = l1Users.map((u) => u.inviteCode);
+    // Find Level 1 members (Direct referrals of current user)
+    const l1Users = user.inviteCode
+      ? await User.find({ invitedBy: user.inviteCode, _id: { $ne: user._id } }).select('phone createdAt wallet inviteCode')
+      : [];
+    const l1Codes = l1Users.map((u) => u.inviteCode).filter(Boolean);
     const l1Ids = l1Users.map((u) => u._id);
 
-    // Find Level 2 members
-    const l2Users = l1Codes.length > 0 ? await User.find({ invitedBy: { $in: l1Codes } }).select('phone createdAt wallet inviteCode') : [];
-    const l2Codes = l2Users.map((u) => u.inviteCode);
+    // Find Level 2 members (Direct referrals of Level 1 members)
+    const l2Users =
+      l1Codes.length > 0
+        ? await User.find({
+            invitedBy: { $in: l1Codes },
+            _id: { $nin: [user._id, ...l1Ids] },
+          }).select('phone createdAt wallet inviteCode')
+        : [];
+    const l2Codes = l2Users.map((u) => u.inviteCode).filter(Boolean);
     const l2Ids = l2Users.map((u) => u._id);
 
-    // Find Level 3 members
-    const l3Users = l2Codes.length > 0 ? await User.find({ invitedBy: { $in: l2Codes } }).select('phone createdAt wallet') : [];
+    // Find Level 3 members (Direct referrals of Level 2 members)
+    const l3Users =
+      l2Codes.length > 0
+        ? await User.find({
+            invitedBy: { $in: l2Codes },
+            _id: { $nin: [user._id, ...l1Ids, ...l2Ids] },
+          }).select('phone createdAt wallet inviteCode')
+        : [];
     const l3Ids = l3Users.map((u) => u._id);
 
     const allTeamIds = [...l1Ids, ...l2Ids, ...l3Ids];
@@ -51,7 +65,7 @@ export const getTeamData = async (req, res) => {
           level1: {
             level: 1,
             name: 'Level 1',
-            commissionRate: '10%',
+            commissionRate: '30%',
             membersCount: l1Users.length,
             activeCount: l1Users.filter((u) => (u.wallet?.totalIncome || 0) > 0).length,
             rechargeTotal: l1Recharge,
@@ -63,7 +77,7 @@ export const getTeamData = async (req, res) => {
           level2: {
             level: 2,
             name: 'Level 2',
-            commissionRate: '3%',
+            commissionRate: '10%',
             membersCount: l2Users.length,
             activeCount: l2Users.filter((u) => (u.wallet?.totalIncome || 0) > 0).length,
             rechargeTotal: l2Recharge,
@@ -75,7 +89,7 @@ export const getTeamData = async (req, res) => {
           level3: {
             level: 3,
             name: 'Level 3',
-            commissionRate: '1%',
+            commissionRate: '5%',
             membersCount: l3Users.length,
             activeCount: l3Users.filter((u) => (u.wallet?.totalIncome || 0) > 0).length,
             rechargeTotal: l3Recharge,

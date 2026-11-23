@@ -17,7 +17,7 @@ const depositRequestSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
-      min: [100, 'Minimum deposit amount is 100 INR'],
+      min: [750, 'Minimum deposit amount is 750 INR'],
     },
     amountPaise: {
       type: Number,

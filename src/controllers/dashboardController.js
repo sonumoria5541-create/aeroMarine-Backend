@@ -111,7 +111,7 @@ export const getReferrals = async (req, res, next) => {
         referralLink: `${config.clientUrl}/register?invite=${req.user.referralCode}`,
         totalReferrals: referrals.length,
         referredUsers: maskedReferrals,
-        commissionNotice: 'Referral commission program is in compliance draft phase.',
+        commissionNotice: 'Referral commission active: Tier 1 (30%), Tier 2 (10%), Tier 3 (5%) credited on member recharge.',
       },
     });
   } catch (err) {

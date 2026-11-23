@@ -159,84 +159,8 @@ export const buyPlan = async (req, res) => {
       console.warn('[Ledger Notice] Background order ledger sync:', ledgerErr.message);
     }
 
-    // Distribute referral commissions: L1 (10%), L2 (3%), L3 (1%)
-    try {
-      if (user.invitedBy) {
-        const l1User = await User.findOne({ inviteCode: user.invitedBy });
-        if (l1User) {
-          const l1Bonus = Math.round(plan.price * 0.10);
-          if (l1Bonus > 0) {
-            await User.findByIdAndUpdate(l1User._id, {
-              $inc: {
-                'wallet.availableBalance': l1Bonus,
-                'wallet.totalIncome': l1Bonus,
-              },
-            });
-
-            await Record.create({
-              userId: l1User._id,
-              category: 'commission',
-              title: `Level 1 Commission (${user.phone.slice(0, 3)}***${user.phone.slice(-4)})`,
-              amount: l1Bonus,
-              isCredit: true,
-              status: 'Success',
-            });
-          }
-
-          // Level 2
-          if (l1User.invitedBy) {
-            const l2User = await User.findOne({ inviteCode: l1User.invitedBy });
-            if (l2User) {
-              const l2Bonus = Math.round(plan.price * 0.03);
-              if (l2Bonus > 0) {
-                await User.findByIdAndUpdate(l2User._id, {
-                  $inc: {
-                    'wallet.availableBalance': l2Bonus,
-                    'wallet.totalIncome': l2Bonus,
-                  },
-                });
-
-                await Record.create({
-                  userId: l2User._id,
-                  category: 'commission',
-                  title: `Level 2 Commission (${user.phone.slice(0, 3)}***${user.phone.slice(-4)})`,
-                  amount: l2Bonus,
-                  isCredit: true,
-                  status: 'Success',
-                });
-              }
-
-              // Level 3
-              if (l2User.invitedBy) {
-                const l3User = await User.findOne({ inviteCode: l2User.invitedBy });
-                if (l3User) {
-                  const l3Bonus = Math.round(plan.price * 0.01);
-                  if (l3Bonus > 0) {
-                    await User.findByIdAndUpdate(l3User._id, {
-                      $inc: {
-                        'wallet.availableBalance': l3Bonus,
-                        'wallet.totalIncome': l3Bonus,
-                      },
-                    });
-
-                    await Record.create({
-                      userId: l3User._id,
-                      category: 'commission',
-                      title: `Level 3 Commission (${user.phone.slice(0, 3)}***${user.phone.slice(-4)})`,
-                      amount: l3Bonus,
-                      isCredit: true,
-                      status: 'Success',
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (commError) {
-      console.error('[Plan] Referral commission distribution error:', commError);
-    }
+    // Referral commissions are distributed on member recharge (Tier 1: 30%, Tier 2: 10%, Tier 3: 5%)
+    // in adminController.js upon deposit verification.
 
     const activeCount = await Order.countDocuments({
       userId: user._id,

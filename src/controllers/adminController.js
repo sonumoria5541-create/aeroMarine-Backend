@@ -463,6 +463,94 @@ export const handleDepositAction = async (req, res) => {
         { status: 'Success' }
       );
 
+      // Distribute 3-tier referral commissions on user recharge:
+      // Tier 1: 30%, Tier 2: 10%, Tier 3: 5% of what the user recharges
+      try {
+        if (updatedUser && updatedUser.invitedBy) {
+          const maskedRechargerPhone = updatedUser.phone
+            ? `${updatedUser.phone.slice(0, 3)}***${updatedUser.phone.slice(-4)}`
+            : 'Member';
+
+          // Tier 1 (30%)
+          const l1User = await User.findOne({ inviteCode: updatedUser.invitedBy });
+          if (l1User) {
+            const l1Bonus = Math.round(recharge.amount * 0.30);
+            if (l1Bonus > 0) {
+              await User.findByIdAndUpdate(l1User._id, {
+                $inc: {
+                  'wallet.availableBalance': l1Bonus,
+                  'wallet.totalIncome': l1Bonus,
+                },
+              });
+
+              await Record.create({
+                userId: l1User._id,
+                category: 'commission',
+                title: `Tier 1 Commission (30% on ₹${recharge.amount} by ${maskedRechargerPhone})`,
+                amount: l1Bonus,
+                isCredit: true,
+                status: 'Success',
+                referenceId: `REF-T1-${recharge._id}`,
+              });
+            }
+
+            // Tier 2 (10%)
+            if (l1User.invitedBy) {
+              const l2User = await User.findOne({ inviteCode: l1User.invitedBy });
+              if (l2User) {
+                const l2Bonus = Math.round(recharge.amount * 0.10);
+                if (l2Bonus > 0) {
+                  await User.findByIdAndUpdate(l2User._id, {
+                    $inc: {
+                      'wallet.availableBalance': l2Bonus,
+                      'wallet.totalIncome': l2Bonus,
+                    },
+                  });
+
+                  await Record.create({
+                    userId: l2User._id,
+                    category: 'commission',
+                    title: `Tier 2 Commission (10% on ₹${recharge.amount} by ${maskedRechargerPhone})`,
+                    amount: l2Bonus,
+                    isCredit: true,
+                    status: 'Success',
+                    referenceId: `REF-T2-${recharge._id}`,
+                  });
+                }
+
+                // Tier 3 (5%)
+                if (l2User.invitedBy) {
+                  const l3User = await User.findOne({ inviteCode: l2User.invitedBy });
+                  if (l3User) {
+                    const l3Bonus = Math.round(recharge.amount * 0.05);
+                    if (l3Bonus > 0) {
+                      await User.findByIdAndUpdate(l3User._id, {
+                        $inc: {
+                          'wallet.availableBalance': l3Bonus,
+                          'wallet.totalIncome': l3Bonus,
+                        },
+                      });
+
+                      await Record.create({
+                        userId: l3User._id,
+                        category: 'commission',
+                        title: `Tier 3 Commission (5% on ₹${recharge.amount} by ${maskedRechargerPhone})`,
+                        amount: l3Bonus,
+                        isCredit: true,
+                        status: 'Success',
+                        referenceId: `REF-T3-${recharge._id}`,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (commErr) {
+        console.error('[Admin] Error distributing recharge referral commissions:', commErr);
+      }
+
       try {
         await creditDeposit({
           userId: recharge.userId,
@@ -1158,7 +1246,7 @@ export const getSettings = async (req, res) => {
         ifscCode: 'HDFC0001234',
         branch: 'Port Complex Nariman Point, Mumbai',
       },
-      minDeposit: 250,
+      minDeposit: 750,
       minWithdrawal: 120,
       maintenanceMode: false,
       announcement: '',
