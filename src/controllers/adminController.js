@@ -1101,16 +1101,83 @@ export const archivePlan = async (req, res) => {
 export const getOrders = async (req, res) => {
   try {
     const orders = await Order.find()
-      .populate('userId', 'phone name inviteCode')
+      .populate('userId', 'phone name inviteCode role status')
+      .populate('planId', 'name category price dailyIncome durationDays totalRevenue')
       .sort({ createdAt: -1 })
-      .limit(100);
+      .limit(300);
+
+    // Compute operational KPI metrics
+    let totalInvested = 0;
+    let activeCount = 0;
+    let completedCount = 0;
+    let totalYieldsDistributed = 0;
+    let dailyYieldCommitment = 0;
+
+    const normalizedOrders = orders.map((ord) => {
+      const obj = ord.toObject ? ord.toObject() : ord;
+      const price = Number(obj.price || obj.amount || 0);
+      const dailyIncome = Number(obj.dailyIncome || 0);
+      const totalEarned = Number(obj.totalEarned || 0);
+      const durationDays = Number(obj.durationDays || 45);
+      const daysRemaining = obj.daysRemaining != null ? Number(obj.daysRemaining) : 0;
+      const daysElapsed = Math.max(0, durationDays - daysRemaining);
+      const progressPercent = durationDays > 0 ? Math.min(100, Math.round((daysElapsed / durationDays) * 100)) : 0;
+      const totalRevenue = Number(obj.totalRevenue || dailyIncome * durationDays);
+      const dailyRatePercent = price > 0 ? ((dailyIncome / price) * 100).toFixed(1) : '13.3';
+
+      totalInvested += price;
+      if (obj.status === 'running') {
+        activeCount++;
+        dailyYieldCommitment += dailyIncome;
+      }
+      if (obj.status === 'completed') {
+        completedCount++;
+      }
+      totalYieldsDistributed += totalEarned;
+
+      const userObj = obj.userId || obj.user || { name: 'Member', phone: 'N/A', inviteCode: 'N/A' };
+      const planTitle = obj.planName || obj.planId?.name || obj.planSnapshot?.name || 'Standard 20ft Cargo';
+
+      return {
+        ...obj,
+        user: userObj,
+        userId: userObj,
+        planName: planTitle,
+        price,
+        amount: price,
+        dailyIncome,
+        dailyRatePercent,
+        durationDays,
+        daysRemaining,
+        daysElapsed,
+        progressPercent,
+        totalEarned,
+        totalRevenue,
+        status: obj.status || 'running',
+        planSnapshot: {
+          name: planTitle,
+          durationDays,
+          dailyIncome,
+          dailyRatePercent,
+        },
+      };
+    });
 
     return res.json({
       status: 'success',
       success: true,
-      data: orders,
+      data: normalizedOrders,
+      stats: {
+        totalOrders: orders.length,
+        totalInvested,
+        activeCount,
+        completedCount,
+        totalYieldsDistributed,
+        dailyYieldCommitment,
+      },
     });
   } catch (error) {
+    console.error('[Admin Orders] Fetch error:', error);
     return res.status(500).json({ status: 'failed', success: false, message: 'Error fetching fleet orders' });
   }
 };
