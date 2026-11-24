@@ -31,6 +31,9 @@ router.post('/auth/bank', authenticate, authController.updateBank);
 router.post('/auth/change-password', authenticate, authLimiter, authController.changePassword);
 router.post('/auth/avatar', authenticate, authController.updateAvatar);
 
+// Public System & Financial Limits
+router.get('/settings/limits', adminController.getPublicLimits);
+
 // Container Fleet Plan routes
 router.get('/plans', optionalAuthenticate, planController.getPlans);
 router.post('/plans/buy', authenticate, financialLimiter, planController.buyPlan);

@@ -2,6 +2,7 @@ import Recharge from '../models/Recharge.js';
 import Withdrawal from '../models/Withdrawal.js';
 import Record from '../models/Record.js';
 import User from '../models/User.js';
+import SystemSetting from '../models/SystemSetting.js';
 import { config } from '../config/env.js';
 import { queueAndSendEmail } from '../services/emailService.js';
 import { reserveWithdrawal } from '../services/ledgerService.js';
@@ -124,8 +125,24 @@ export const submitWithdrawal = async (req, res) => {
     }
 
     const numAmount = Math.floor(Number(amount));
-    if (!numAmount || isNaN(numAmount) || numAmount < 120) {
-      return res.status(400).json({ status: 'failed', message: 'Minimum withdrawal amount is ₹120' });
+
+    let minWithdrawal = 200;
+    try {
+      const minWithSetting = await SystemSetting.findOne({ key: 'minWithdrawal' });
+      if (minWithSetting?.value != null && !isNaN(Number(minWithSetting.value))) {
+        minWithdrawal = Number(minWithSetting.value);
+      } else {
+        const finLimits = await SystemSetting.findOne({ key: 'financial_limits' });
+        if (finLimits?.value?.minWithdrawal != null) {
+          minWithdrawal = Number(finLimits.value.minWithdrawal);
+        }
+      }
+    } catch (e) {
+      minWithdrawal = 200;
+    }
+
+    if (!numAmount || isNaN(numAmount) || numAmount < minWithdrawal) {
+      return res.status(400).json({ status: 'failed', message: `Minimum withdrawal amount is ₹${minWithdrawal}` });
     }
 
     if (numAmount > 1000000) {

@@ -262,7 +262,7 @@ describe('AeroMarine Production API & Security Test Suite', () => {
       expect(res.body.message).toContain('Insufficient');
     });
 
-    it('should reject withdrawal below ₹120 minimum', async () => {
+    it('should reject withdrawal below minimum', async () => {
       const res = await request(app)
         .post('/api/wallet/withdraw')
         .set('Authorization', `Bearer ${userToken}`)
@@ -270,7 +270,7 @@ describe('AeroMarine Production API & Security Test Suite', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.status).toBe('failed');
-      expect(res.body.message).toContain('Minimum withdrawal amount is ₹120');
+      expect(res.body.message).toMatch(/Minimum withdrawal amount is/);
     });
 
     it('should submit a valid withdrawal request and atomically reserve balance', async () => {

@@ -1315,7 +1315,7 @@ export const getSettings = async (req, res) => {
         branch: 'Port Complex Nariman Point, Mumbai',
       },
       minDeposit: 750,
-      minWithdrawal: 120,
+      minWithdrawal: 200,
       maintenanceMode: false,
       announcement: '',
       appMode: config.appMode,
@@ -1328,6 +1328,56 @@ export const getSettings = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ status: 'failed', success: false, message: 'Error loading settings' });
+  }
+};
+
+export const getPublicLimits = async (req, res) => {
+  try {
+    let minDeposit = 750;
+    let minWithdrawal = 200;
+    let maxWithdrawal = 1000000;
+    let withdrawalFeePercent = 10;
+
+    const [minDepSetting, minWithSetting, finLimits] = await Promise.all([
+      SystemSetting.findOne({ key: 'minDeposit' }),
+      SystemSetting.findOne({ key: 'minWithdrawal' }),
+      SystemSetting.findOne({ key: 'financial_limits' }),
+    ]);
+
+    if (minDepSetting?.value != null) minDeposit = Number(minDepSetting.value);
+    if (minWithSetting?.value != null) minWithdrawal = Number(minWithSetting.value);
+    else if (finLimits?.value?.minWithdrawal != null) {
+      minWithdrawal = Number(finLimits.value.minWithdrawal);
+    }
+
+    if (finLimits?.value?.maxWithdrawal != null) {
+      maxWithdrawal = Number(finLimits.value.maxWithdrawal);
+    }
+    if (finLimits?.value?.withdrawalFeePercent != null) {
+      withdrawalFeePercent = Number(finLimits.value.withdrawalFeePercent);
+    }
+
+    return res.json({
+      status: 'success',
+      success: true,
+      data: {
+        minDeposit,
+        minWithdrawal,
+        maxWithdrawal,
+        withdrawalFeePercent,
+      },
+    });
+  } catch (error) {
+    return res.json({
+      status: 'success',
+      success: true,
+      data: {
+        minDeposit: 750,
+        minWithdrawal: 200,
+        maxWithdrawal: 1000000,
+        withdrawalFeePercent: 10,
+      },
+    });
   }
 };
 
