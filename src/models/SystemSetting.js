@@ -32,3 +32,4 @@ const systemSettingSchema = new mongoose.Schema(
 );
 
 export const SystemSetting = mongoose.model('SystemSetting', systemSettingSchema);
+export default SystemSetting;

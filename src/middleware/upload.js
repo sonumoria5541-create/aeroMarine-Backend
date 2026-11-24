@@ -37,3 +37,29 @@ export const uploadPaymentProof = multer({
   },
   fileFilter: imageFileFilter,
 });
+
+const mediaFileFilter = (req, file, cb) => {
+  const allowed = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/jpg',
+    'image/gif',
+    'image/svg+xml',
+    'video/mp4',
+    'video/webm',
+  ];
+  if (allowed.includes(file.mimetype) || file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid media type. Supported formats: JPG, PNG, WebP, GIF, SVG, MP4, WebM'), false);
+  }
+};
+
+export const uploadMediaFile = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB limit
+  },
+  fileFilter: mediaFileFilter,
+});

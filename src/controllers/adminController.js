@@ -7,6 +7,7 @@ import Plan from '../models/Plan.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { SystemSetting } from '../models/SystemSetting.js';
 import { config } from '../config/env.js';
+import bcrypt from 'bcryptjs';
 import { creditDeposit, finalizePaidWithdrawal, releaseWithdrawalReservation, reconcileWallet } from '../services/ledgerService.js';
 import { queueAndSendEmail } from '../services/emailService.js';
 
@@ -1321,5 +1322,173 @@ export const getStaff = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ status: 'failed', success: false, message: 'Error fetching staff' });
+  }
+};
+
+export const createStaff = async (req, res) => {
+  try {
+    const { name, phone, password, role = 'support', permissions = [] } = req.body;
+    const admin = req.user;
+
+    if (!phone || !/^\d{10}$/.test(phone)) {
+      return res.status(400).json({ status: 'failed', success: false, message: 'Valid 10-digit mobile number required' });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ status: 'failed', success: false, message: 'Password must be at least 6 characters' });
+    }
+
+    const validRoles = ['admin', 'finance', 'support', 'operations'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ status: 'failed', success: false, message: 'Invalid staff role specified' });
+    }
+
+    const existing = await User.findOne({ phone });
+    if (existing) {
+      return res.status(400).json({ status: 'failed', success: false, message: `Account with phone ${phone} already exists` });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newStaff = await User.create({
+      name: name?.trim() || 'Staff Officer',
+      phone,
+      password: hashedPassword,
+      role,
+      permissions: Array.isArray(permissions) ? permissions : [],
+      status: 'active',
+      isProtectedOwner: false,
+    });
+
+    await AuditLog.create({
+      actor: admin._id,
+      actorPhone: admin.phone,
+      actorRole: admin.role,
+      action: 'CREATE_STAFF',
+      targetType: 'User',
+      targetId: newStaff._id.toString(),
+      reason: `Created staff account: ${phone} (Role: ${role})`,
+      ipAddress: req.ip || '',
+    });
+
+    return res.status(201).json({
+      status: 'success',
+      success: true,
+      message: `Staff account ${phone} created successfully`,
+      data: newStaff.toSafeObject(),
+    });
+  } catch (error) {
+    console.error('[Admin] createStaff error:', error);
+    return res.status(500).json({ status: 'failed', success: false, message: 'Error creating staff account' });
+  }
+};
+
+export const updateStaff = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role, permissions, status, password } = req.body;
+    const admin = req.user;
+
+    const targetUser = await User.findById(id);
+    if (!targetUser) {
+      return res.status(404).json({ status: 'failed', success: false, message: 'Staff user not found' });
+    }
+
+    // Owner protection
+    if ((targetUser.isProtectedOwner || targetUser.phone === '8427348239') && role && role !== 'admin' && role !== 'owner') {
+      return res.status(403).json({
+        status: 'failed',
+        success: false,
+        message: 'Security Violation: Cannot alter role of the primary owner account.',
+      });
+    }
+
+    if (name !== undefined) targetUser.name = name.trim();
+    if (role && ['admin', 'owner', 'finance', 'support', 'operations'].includes(role)) {
+      targetUser.role = role;
+    }
+    if (Array.isArray(permissions)) {
+      targetUser.permissions = permissions;
+    }
+    if (status && ['active', 'suspended', 'blocked'].includes(status)) {
+      if ((targetUser.isProtectedOwner || targetUser.phone === '8427348239') && status !== 'active') {
+        return res.status(403).json({
+          status: 'failed',
+          success: false,
+          message: 'Security Violation: The primary owner account cannot be suspended or blocked.',
+        });
+      }
+      targetUser.status = status;
+    }
+    if (password && password.length >= 6) {
+      targetUser.password = await bcrypt.hash(password, 10);
+    }
+
+    await targetUser.save();
+
+    await AuditLog.create({
+      actor: admin._id,
+      actorPhone: admin.phone,
+      actorRole: admin.role,
+      action: 'UPDATE_STAFF',
+      targetType: 'User',
+      targetId: targetUser._id.toString(),
+      reason: `Updated staff permissions/role for: ${targetUser.phone}`,
+      ipAddress: req.ip || '',
+    });
+
+    return res.json({
+      status: 'success',
+      success: true,
+      message: 'Staff account updated successfully',
+      data: targetUser.toSafeObject(),
+    });
+  } catch (error) {
+    console.error('[Admin] updateStaff error:', error);
+    return res.status(500).json({ status: 'failed', success: false, message: 'Error updating staff account' });
+  }
+};
+
+export const deleteStaff = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const admin = req.user;
+
+    const targetUser = await User.findById(id);
+    if (!targetUser) {
+      return res.status(404).json({ status: 'failed', success: false, message: 'Staff user not found' });
+    }
+
+    // Owner protection
+    if (targetUser.isProtectedOwner || targetUser.phone === '8427348239') {
+      return res.status(403).json({
+        status: 'failed',
+        success: false,
+        message: 'Security Violation: Cannot delete the primary owner account.',
+      });
+    }
+
+    targetUser.role = 'user';
+    targetUser.permissions = [];
+    await targetUser.save();
+
+    await AuditLog.create({
+      actor: admin._id,
+      actorPhone: admin.phone,
+      actorRole: admin.role,
+      action: 'REVOKE_STAFF',
+      targetType: 'User',
+      targetId: targetUser._id.toString(),
+      reason: `Revoked administrative staff privileges for: ${targetUser.phone}`,
+      ipAddress: req.ip || '',
+    });
+
+    return res.json({
+      status: 'success',
+      success: true,
+      message: 'Staff privileges revoked successfully',
+    });
+  } catch (error) {
+    console.error('[Admin] deleteStaff error:', error);
+    return res.status(500).json({ status: 'failed', success: false, message: 'Error revoking staff account' });
   }
 };

@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { config } from './config/env.js';
 import apiRoutes from './routes/index.js';
+import { getSitemapXml, getRobotsTxt } from './controllers/seoController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,6 +86,8 @@ const handleHealthCheck = (req, res) => {
 
 app.get('/health', handleHealthCheck);
 app.get('/api/health', handleHealthCheck);
+app.get('/sitemap.xml', getSitemapXml);
+app.get('/robots.txt', getRobotsTxt);
 
 // API routes mounted at multiple entrypoints for maximum client compatibility
 app.use('/api', apiRoutes);

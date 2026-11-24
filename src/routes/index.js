@@ -9,7 +9,13 @@ import * as teamController from '../controllers/teamController.js';
 import * as taskController from '../controllers/taskController.js';
 import * as adminController from '../controllers/adminController.js';
 import * as uploadController from '../controllers/uploadController.js';
-import { uploadPaymentProof } from '../middleware/upload.js';
+import * as cmsPageController from '../controllers/cmsPageController.js';
+import * as mediaController from '../controllers/mediaController.js';
+import * as inquiryController from '../controllers/inquiryController.js';
+import * as navigationController from '../controllers/navigationController.js';
+import * as appearanceController from '../controllers/appearanceController.js';
+import * as seoController from '../controllers/seoController.js';
+import { uploadPaymentProof, uploadMediaFile } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -49,6 +55,15 @@ router.get('/team', authenticate, teamController.getTeamData);
 
 // Lucky Cargo Wheel (Rate-limited to prevent spin duplication)
 router.post('/task/spin', authenticate, financialLimiter, taskController.spinWheel);
+
+// ==========================================
+// PUBLIC CMS, INQUIRY & APPEARANCE APIS
+// ==========================================
+router.get('/pages', cmsPageController.getPublicPages);
+router.get('/pages/:slug', cmsPageController.getPublicPageBySlug);
+router.post('/contact', inquiryController.submitInquiry);
+router.get('/navigation', navigationController.getPublicNavigation);
+router.get('/appearance', appearanceController.getPublicAppearance);
 
 // ==========================================
 // ADVANCED ADMINISTRATIVE CONTROL CENTER APIS
@@ -97,5 +112,45 @@ router.patch('/admin/settings', authenticate, requireAdmin, adminController.upda
 
 // 9. Staff & Permissions
 router.get('/admin/staff', authenticate, requireAdmin, adminController.getStaff);
+router.post('/admin/staff', authenticate, requireAdmin, adminController.createStaff);
+router.patch('/admin/staff/:id', authenticate, requireAdmin, adminController.updateStaff);
+router.delete('/admin/staff/:id', authenticate, requireAdmin, adminController.deleteStaff);
+
+// 10. CMS Page & Section Builder Management
+router.get('/admin/pages', authenticate, requireAdmin, cmsPageController.getAdminPages);
+router.get('/admin/pages/:id', authenticate, requireAdmin, cmsPageController.getAdminPageById);
+router.post('/admin/pages', authenticate, requireAdmin, cmsPageController.createPage);
+router.patch('/admin/pages/:id', authenticate, requireAdmin, cmsPageController.updatePage);
+router.delete('/admin/pages/:id', authenticate, requireAdmin, cmsPageController.deletePage);
+router.post('/admin/pages/:id/duplicate', authenticate, requireAdmin, cmsPageController.duplicatePage);
+
+// 11. Media Library & File Asset Manager
+router.post(
+  '/admin/media/upload',
+  authenticate,
+  requireAdmin,
+  uploadMediaFile.single('file'),
+  mediaController.uploadMedia
+);
+router.get('/admin/media', authenticate, requireAdmin, mediaController.getMediaList);
+router.patch('/admin/media/:id', authenticate, requireAdmin, mediaController.updateMediaItem);
+router.delete('/admin/media/:id', authenticate, requireAdmin, mediaController.deleteMediaItem);
+
+// 12. Inquiries & Customer Leads Desk
+router.get('/admin/inquiries', authenticate, requireAdmin, inquiryController.getInquiries);
+router.get('/admin/inquiries/:id', authenticate, requireAdmin, inquiryController.getInquiryById);
+router.patch('/admin/inquiries/:id', authenticate, requireAdmin, inquiryController.updateInquiry);
+router.delete('/admin/inquiries/:id', authenticate, requireAdmin, inquiryController.deleteInquiry);
+
+// 13. Navigation & Menu Architecture
+router.get('/admin/navigation', authenticate, requireAdmin, navigationController.getAdminNavigations);
+router.patch('/admin/navigation/:location', authenticate, requireAdmin, navigationController.updateNavigationMenu);
+
+// 14. Website Appearance, Branding & Design Engine
+router.get('/admin/appearance', authenticate, requireAdmin, appearanceController.getAdminAppearance);
+router.patch('/admin/appearance', authenticate, requireAdmin, appearanceController.updateAppearance);
+
+// 15. SEO Auditing & Verification
+router.get('/admin/seo/audit', authenticate, requireAdmin, seoController.getSeoAuditReport);
 
 export default router;
